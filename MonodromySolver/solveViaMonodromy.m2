@@ -21,7 +21,8 @@ export {
     "AugmentEdgeCount",
     "AugmentNodeCount",
     "randomWeights",
-    "EdgesSaturated"}
+    "EdgesSaturated",
+    "ThreadCount"}
 
 -- in: PF, a system of polynomials in a ring of the form CC[parameters][variables]
 --     point0, (as above)
@@ -203,7 +204,8 @@ staticMonodromySolve = method(Options=>{
 	NumberOfRepeats => null,
 	"new tracking routine" => true, -- uses old "track" if false
 	Verbose => false,
-	EdgesSaturated => false})
+	EdgesSaturated => false,
+	ThreadCount => 1})
 staticMonodromySolve (PolySystem, Point, List) := o -> (PS,point0,s0) -> (
 	USEtrackHomotopy = (getDefault Software === M2engine and o#"new tracking routine");
 	mutableOptions := new MutableHashTable from o;
@@ -344,7 +346,8 @@ monodromySolve = method(Options=>{
 	NumberOfRepeats => 10,
 	"new tracking routine" => true, -- uses old "track" if false
 	Verbose => false,
-	EdgesSaturated => false})
+	EdgesSaturated => false,
+	ThreadCount => 1})
 monodromySolve PolySystem := o -> PS -> (
     (p0,x0) := createSeedPair PS;
     monodromySolve(PS,p0,{x0},o)
@@ -386,7 +389,8 @@ dynamicMonodromySolve = method(Options=>{
 	NumberOfRepeats => null,
 	"new tracking routine" => true, -- uses old "track" if false
 	Verbose => false,
-	EdgesSaturated => false})
+	EdgesSaturated => false,
+	ThreadCount => 1})
 dynamicMonodromySolve (PolySystem, Point, List) := o -> (PS,point0,s0) -> (
 	mutableOptions := new MutableHashTable from o;
 	if mutableOptions.TargetSolutionCount === null then 
@@ -427,33 +431,106 @@ coreMonodromySolve = method(Options=>{
 	NumberOfRepeats => 10,
 	"new tracking routine" => true, -- uses old "track" if false
 	Verbose => false,
-	EdgesSaturated => false})
+	EdgesSaturated => false,
+	ThreadCount => 1})
 coreMonodromySolve (HomotopyGraph, HomotopyNode) := o -> (HG,node1) -> (
 	selectEdgeAndDirection := o.SelectEdgeAndDirection;
 	same := 0;
 	npaths := 0;    
 	lastNode := node1;
+	
+	if ThreadCount > maxAllowableThreads then
+		error "ThreadCount > maxAllowableThreads";
+	allowableThreads := ThreadCount;
+	
+	TaskList := new MutableList from for i in 1..ThreadCount list (newThread(null,null));
+	
+	L := new MutableHashTable from {}; -- L is keyed on HomotopyPathTrack. Values are expected # of new nodes found.
+	for e in HG.Edges do (
+		for from1to2 in (true, false) do (
+			PT := newPathTrack(e, from1to2);
+			L#PT = ExpectedNewSolCount(PT);
+		);
+	);
 	while not o.StoppingCriterion(same,lastNode.PartialSols) do (
-		(e, from1to2) := selectEdgeAndDirection(HG);
-		if o.Verbose then (
-			-- << "Correspondences are " << keys e.Correspondence12;
-			if e.?Potential12 then << " (potential12 = " << e.Potential12 << ")";
-			-- << " and " << keys e.Correspondence21;
-			if e.?Potential21 then << " (potential21 = " << e.Potential21 << ")";
-			<< endl << "Direction is " << from1to2 << endl;
-			<< "-------------------------------------------------" << endl;
-		);
-		lastNode = if from1to2 then e.Node2 else e.Node1;
-		nKnownPoints := length lastNode.PartialSols;
-		trackedPaths := trackEdge(e, from1to2, o.BatchSize);
-		npaths = npaths + trackedPaths;
-		if o.Verbose then (
-			<< "  node1: " << length e.Node1.PartialSols << endl;
-			<< "  node2: " << length e.Node2.PartialSols << endl;    	
-			<< "trackedPaths " << trackedPaths << endl; 
-		);
-		if length lastNode.PartialSols == nKnownPoints 
-		then same = same + 1 else same = 0;
+		for i in 1..#TaskList do (
+			if TaskList#i#ThreadTask == null or isReady(TaskList#i#ThreadTask) then (
+				if not TaskList#i#ThreadTask == null then (
+					--This path just finished being tracked. We need to update data structures.
+					(untrackedInds, newSols) := taskResult(TaskList#i#ThreadTask);
+					
+					--Increase the number of know solutions of the destination node.
+					npaths = npaths + cleanupTrackEdge(TaskList#i#PathTrack,untrackedInds, newSols);
+					
+					--update E.V.s in TaskList
+					Tail := TaskList#i#PathTrack#Tail;
+					Tail#expectedCorrCount = expectedCorrCount - 1;
+					Tail#expectedSolCount := 0;
+					for t in TaskList do (
+						if Tail == t#TaskList#PathTrack#Tail then (
+							t#TaskList#ExpectedNewSolCount = ExpectedNewSolCount(t#TaskList#PathTrack);
+							Tail#expectedSolCount = Tail#expectedSolCount + t#TaskList#ExpectedNewSolCount;
+						);
+					);
+					
+					--update necessary paths in L
+					for key in keys(L) do (
+						if key#Tail == Tail (
+							L#key = ExpectedNewSolCount(key);
+						);
+					);
+
+					{
+					if o.Verbose then (
+						-- Not meaningful in parallel version
+						--<< "  node1: " << length e.Node1.PartialSols << endl;
+						--<< "  node2: " << length e.Node2.PartialSols << endl;
+						<< "trackedPaths " << trackedPaths << endl; 
+					);
+					if length lastNode.PartialSols == nKnownPoints then
+						same = same + 1 else same = 0;
+					}
+				)
+				-- launch new task.
+				-- (e, from1to2) := selectEdgeAndDirection(HG); -- NEEDS TO CHANGE
+				PT := -1;
+				maxValue := -1;
+				for pair in pairs(L) do (
+					if pair#1 > maxValue then (
+						PT = pair#0;
+						maxValue = pair#1;
+					);
+				);
+				if PT == -1 then
+					error "This should never happen"
+				{
+				if o.Verbose then (
+					-- << "Correspondences are " << keys e.Correspondence12;
+					if e.?Potential12 then << " (potential12 = " << e.Potential12 << ")";
+					-- << " and " << keys e.Correspondence21;
+					if e.?Potential21 then << " (potential21 = " << e.Potential21 << ")";
+					<< endl << "Direction is " << from1to2 << endl;
+					<< "-------------------------------------------------" << endl;
+				);
+				}
+				-- These aren't necessary if we're giving it a root count.
+				-- lastNode = if from1to2 then e.Node2 else e.Node1;
+				-- nKnownPoints := length lastNode.PartialSols;
+				TaskList#i#ThreadTask = schedule (() -> trackEdge(e, from1to2, o.BatchSize));
+				TaskList#i#PathTrack = PT;
+				
+				--update the expected number of solutions known at the tail
+				PT#Tail#expectedSolCount = PT#Tail#expectedSolCount + maxValue;
+				PT#Edge#expectedCorrCount = PT#Edge#expectedCorrCount + 1;
+				
+				--update necessary paths in L
+				for key in keys(L) do (
+					if key#Tail == PT#Tail (
+						L#key = ExpectedNewSolCount(key);
+					);
+				);
+			)
+		)
 	);
 	if o.TargetSolutionCount =!= null and o.TargetSolutionCount != length lastNode.PartialSols 
 	then npaths = "failed";
