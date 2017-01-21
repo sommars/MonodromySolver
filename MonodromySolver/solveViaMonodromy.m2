@@ -439,11 +439,11 @@ coreMonodromySolve (HomotopyGraph, HomotopyNode) := o -> (HG,node1) -> (
 	npaths := 0;    
 	lastNode := node1;
 	
-	if ThreadCount > maxAllowableThreads then
+	if o.ThreadCount > maxAllowableThreads then
 		error "ThreadCount > maxAllowableThreads";
-	allowableThreads := ThreadCount;
+	allowableThreads := o.ThreadCount;
 	
-	TaskList := new MutableList from for i in 1..ThreadCount list (newThread(null,null));
+	TaskList := new MutableList from for i in 1..o.ThreadCount list (newThread(null,null));
 	
 	L := new MutableHashTable from {}; -- L is keyed on HomotopyPathTrack. Values are expected # of new nodes found.
 	for e in HG.Edges do (
@@ -453,46 +453,35 @@ coreMonodromySolve (HomotopyGraph, HomotopyNode) := o -> (HG,node1) -> (
 		);
 	);
 	while not o.StoppingCriterion(same,lastNode.PartialSols) do (
-		for i in 1..#TaskList do (
-			if TaskList#i#ThreadTask == null or isReady(TaskList#i#ThreadTask) then (
-				if not TaskList#i#ThreadTask == null then (
+		for i in 0..#TaskList - 1 do (
+			if class(TaskList#i#ThreadTask) === class(null) or isReady(TaskList#i#ThreadTask) then (
+				if not class(TaskList#i#ThreadTask) === class(null) then (
 					--This path just finished being tracked. We need to update data structures.
 					(untrackedInds, newSols) := taskResult(TaskList#i#ThreadTask);
 					
 					--Increase the number of know solutions of the destination node.
 					npaths = npaths + cleanupTrackEdge(TaskList#i#PathTrack,untrackedInds, newSols);
-					
+					<< "NPATHS: " << npaths << endl;
 					--update E.V.s in TaskList
-					Tail := TaskList#i#PathTrack#Tail;
-					Tail#expectedCorrCount = expectedCorrCount - 1;
-					Tail#expectedSolCount := 0;
+					tail := TaskList#i#PathTrack#Tail;
+					TaskList#i#PathTrack#Edge#expectedCorrCount = TaskList#i#PathTrack#Edge#expectedCorrCount - 1;
+					tail#expectedSolCount = 0;
 					for t in TaskList do (
-						if Tail == t#TaskList#PathTrack#Tail then (
-							t#TaskList#ExpectedNewSolCount = ExpectedNewSolCount(t#TaskList#PathTrack);
-							Tail#expectedSolCount = Tail#expectedSolCount + t#TaskList#ExpectedNewSolCount;
+						if tail#SpecializedSystem == t#PathTrack#Tail#SpecializedSystem then (
+							t#ExpectedNewSolCount = ExpectedNewSolCount(t#PathTrack);
+							tail#expectedSolCount = tail#expectedSolCount + t#ExpectedNewSolCount;
 						);
 					);
 					
 					--update necessary paths in L
 					for key in keys(L) do (
-						if key#Tail == Tail (
+						--Probably should give each node a unique identifier so this isn't necessary.
+						if key#Tail#SpecializedSystem == tail#SpecializedSystem then
 							L#key = ExpectedNewSolCount(key);
-						);
 					);
-
-					{
-					if o.Verbose then (
-						-- Not meaningful in parallel version
-						--<< "  node1: " << length e.Node1.PartialSols << endl;
-						--<< "  node2: " << length e.Node2.PartialSols << endl;
-						<< "trackedPaths " << trackedPaths << endl; 
-					);
-					if length lastNode.PartialSols == nKnownPoints then
-						same = same + 1 else same = 0;
-					}
-				)
+				);
+				
 				-- launch new task.
-				-- (e, from1to2) := selectEdgeAndDirection(HG); -- NEEDS TO CHANGE
 				PT := -1;
 				maxValue := -1;
 				for pair in pairs(L) do (
@@ -501,23 +490,12 @@ coreMonodromySolve (HomotopyGraph, HomotopyNode) := o -> (HG,node1) -> (
 						maxValue = pair#1;
 					);
 				);
-				if PT == -1 then
-					error "This should never happen"
-				{
-				if o.Verbose then (
-					-- << "Correspondences are " << keys e.Correspondence12;
-					if e.?Potential12 then << " (potential12 = " << e.Potential12 << ")";
-					-- << " and " << keys e.Correspondence21;
-					if e.?Potential21 then << " (potential21 = " << e.Potential21 << ")";
-					<< endl << "Direction is " << from1to2 << endl;
-					<< "-------------------------------------------------" << endl;
-				);
-				}
-				-- These aren't necessary if we're giving it a root count.
-				-- lastNode = if from1to2 then e.Node2 else e.Node1;
-				-- nKnownPoints := length lastNode.PartialSols;
-				TaskList#i#ThreadTask = schedule (() -> trackEdge(e, from1to2, o.BatchSize));
+				if class(PT) === class(-1) then
+					error "This should never happen";
+				<< "A" << i << endl;
 				TaskList#i#PathTrack = PT;
+				print(peek(PT#Edge));
+				TaskList#i#ThreadTask = schedule (() -> trackEdge(PT#Edge, PT#from1to2, 1));
 				
 				--update the expected number of solutions known at the tail
 				PT#Tail#expectedSolCount = PT#Tail#expectedSolCount + maxValue;
@@ -525,9 +503,9 @@ coreMonodromySolve (HomotopyGraph, HomotopyNode) := o -> (HG,node1) -> (
 				
 				--update necessary paths in L
 				for key in keys(L) do (
-					if key#Tail == PT#Tail (
+					--Probably should give each node a unique identifier so this isn't necessary.
+					if key#Tail#SpecializedSystem == PT#Tail#SpecializedSystem then
 						L#key = ExpectedNewSolCount(key);
-					);
 				);
 			)
 		)
