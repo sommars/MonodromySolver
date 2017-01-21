@@ -14,7 +14,15 @@ export {
 	"getTrackTime",
 	"saturateEdges",
 	"expectedSolCount",
-	"HomotopyThread"}
+	"HomotopyThread",
+	"Edge",
+	"Head",
+	"Tail",
+	"ThreadTask",
+	"from1to2",
+	"PathTrack",
+	"Correspondence",
+	"expectedCorrCount"}
     
 HomotopyNode = new Type of MutableHashTable 
 HomotopyEdge = new Type of MutableHashTable
@@ -41,31 +49,32 @@ newThread (HomotopyPathTrack, Task, ZZ) := (Path, t, s) -> (
 )
 
 newPathTrack = method()
-newPathTrack (HomotopyEdge, Boolean) := (e, 1to2) -> (
-	if from1to2 then (
-		Head := e.Node1;
-		Tail := e.Node2;
-		Correspondence := e.Correspondence12;
+newPathTrack (HomotopyEdge, Boolean) := (e, oneToTwo) -> (
+	if oneToTwo then (
+		head := e.Node1;
+		tail := e.Node2;
+		correspondence := e.Correspondence12;
 	) else (
-		Head := e.Node2;
-		Tail := e.Node1;
-		Correspondence := e.Correspondence21;
-	)
+		head = e.Node2;
+		tail = e.Node1;
+		correspondence = e.Correspondence21;
+	);
 	PT := new HomotopyPathTrack from {
 		Edge => e,
-		from1to2 => 1to2,
-		Head => Head,
-		Tail => Tail,
-		Correspondence := Correspondence
+		from1to2 => oneToTwo,
+		Head => head,
+		Tail => tail,
+		Correspondence => correspondence
 	};
 	PT
 );
 
+ExpectedNewSolCount = method()
 ExpectedNewSolCount (HomotopyPathTrack) := (PT) -> (
 	c := length keys PT#Correspondence + PT#Edge#expectedCorrCount;
 	a := length PT#Head.PartialSols - c; -- known head sols without correspondence
 	b := length PT#Tail.PartialSols - c + PT#Tail#expectedSolCount; -- known tail sols without correspondence
-	d := (e.Graph).TargetSolutionCount;
+	d := (PT.Edge.Graph).TargetSolutionCount;
 	if d!=c and a!=0 then
 		PT = (d-c-b) / (d-c)
 	else
@@ -82,7 +91,7 @@ addNode (HomotopyGraph, Point, PointArray) := (G, params, partialSols) -> (
 		Graph => G,
 		SpecializedSystem => specializeSystem (params, G.Family),
 		Edges => new MutableList from {},
-		expectedSolCount => #partialSols
+		expectedSolCount => 0
 	};
 	G.Vertices = append(G.Vertices, N);
 	N
@@ -97,7 +106,8 @@ addEdge (HomotopyGraph, HomotopyNode, HomotopyNode) := o -> (G,n1,n2) -> (
 		gamma1 => if o#"random gamma" then exp(2 * pi* ii * random RR) else 1, 
 		gamma2 => if o#"random gamma" then exp(2 * pi* ii * random RR) else 1, 
 		Correspondence12 => new MutableHashTable from {}, -- think: the map from labels of points of Node1 to those of Node2
-		Correspondence21 => new MutableHashTable from {}  -- ............................................2.................1
+		Correspondence21 => new MutableHashTable from {},  -- ............................................2.................1
+		expectedCorrCount => 0
 	};
 	n1.Edges#(#n1.Edges) = E;
 	n2.Edges#(#n2.Edges) = E;
@@ -318,7 +328,7 @@ trackEdge (HomotopyEdge, Boolean, Thing) := (e, from1to2, batchSize) -> (
 )
 
 cleanupTrackEdge = method()
-cleanupTrackEdge (HomotopyPathTrack, PointArray, PointArray) = (PT, untrackedInds, newSols) -> (
+cleanupTrackEdge (HomotopyPathTrack, List, List) := (PT, untrackedInds, newSols) -> (
 	e := PT#Edge;
 	tail := PT#Tail;
 	correspondence := PT#Correspondence;
@@ -340,7 +350,7 @@ cleanupTrackEdge (HomotopyPathTrack, PointArray, PointArray) = (PT, untrackedInd
 					b = n;
 					n = n+1;
 				);
-				if not addCorrespondence(if from1to2 then (e,a,b) else (e,b,a)) then (
+				if not addCorrespondence(if PT#from1to2 then (e,a,b) else (e,b,a)) then (
 					print "failure: correspondence conflict";
 					correspondence#a = null -- record failure
 				)
