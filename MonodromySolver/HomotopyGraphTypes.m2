@@ -72,7 +72,7 @@ newPathTrack (HomotopyEdge, Boolean) := (e, oneToTwo) -> (
 ExpectedNewSolCount = method()
 ExpectedNewSolCount (HomotopyPathTrack) := (PT) -> (
 	c := length keys PT#Correspondence + PT#Edge#expectedCorrCount;
-	a := length PT#Head.PartialSols - c; -- known head sols without correspondence
+	a := length PT#Head.PartialSols - c + PT#Edge#expectedCorrCount; -- known head sols without correspondence
 	b := length PT#Tail.PartialSols - c + PT#Tail#expectedSolCount; -- known tail sols without correspondence
 	d := (PT.Edge.Graph).TargetSolutionCount;
 	if d!=c and a!=0 then
