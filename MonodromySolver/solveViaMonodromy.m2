@@ -452,7 +452,7 @@ coreMonodromySolve (HomotopyGraph, HomotopyNode) := o -> (HG,node1) -> (
 			L#PT = ExpectedNewSolCount(PT);
 		);
 	);
-	while not o.StoppingCriterion(same,lastNode.PartialSols) do (
+	while true do (
 		for i in 0..#TaskList - 1 do (
 			if class(TaskList#i#ThreadTask) === class(null) or isReady(TaskList#i#ThreadTask) then (
 				if not class(TaskList#i#ThreadTask) === class(null) then (
@@ -461,7 +461,8 @@ coreMonodromySolve (HomotopyGraph, HomotopyNode) := o -> (HG,node1) -> (
 					
 					--Increase the number of know solutions of the destination node.
 					npaths = npaths + cleanupTrackEdge(TaskList#i#PathTrack,untrackedInds, newSols);
-					<< "NPATHS: " << npaths << endl;
+					--<< "NPATHS: " << npaths << endl;
+					
 					--update E.V.s in TaskList
 					tail := TaskList#i#PathTrack#Tail;
 					TaskList#i#PathTrack#Edge#expectedCorrCount = TaskList#i#PathTrack#Edge#expectedCorrCount - 1;
@@ -474,9 +475,11 @@ coreMonodromySolve (HomotopyGraph, HomotopyNode) := o -> (HG,node1) -> (
 					);
 					
 					--update necessary paths in L
+					--Something is broken here. Commenting out the line in the for loop makes it work,
+					--but it shouldn't be necessary...
 					for key in keys(L) do (
 						--Probably should give each node a unique identifier so this isn't necessary.
-						if key#Tail#SpecializedSystem == tail#SpecializedSystem then
+--						if key#Tail#SpecializedSystem == tail#SpecializedSystem then
 							L#key = ExpectedNewSolCount(key);
 					);
 				);
@@ -492,9 +495,7 @@ coreMonodromySolve (HomotopyGraph, HomotopyNode) := o -> (HG,node1) -> (
 				);
 				if class(PT) === class(-1) then
 					error "This should never happen";
-				<< "A" << i << endl;
 				TaskList#i#PathTrack = PT;
-				print(peek(PT#Edge));
 				TaskList#i#ThreadTask = schedule (() -> trackEdge(PT#Edge, PT#from1to2, 1));
 				
 				--update the expected number of solutions known at the tail
@@ -508,7 +509,17 @@ coreMonodromySolve (HomotopyGraph, HomotopyNode) := o -> (HG,node1) -> (
 						L#key = ExpectedNewSolCount(key);
 				);
 			)
-		)
+		);
+		ShouldExit := false;
+		for node in HG.Vertices do (
+			if length (node.PartialSols) == o.TargetSolutionCount then (
+				ShouldExit = true;
+				lastNode = node;
+				break;
+			);
+		);
+		if ShouldExit then
+			break;
 	);
 	if o.TargetSolutionCount =!= null and o.TargetSolutionCount != length lastNode.PartialSols 
 	then npaths = "failed";
