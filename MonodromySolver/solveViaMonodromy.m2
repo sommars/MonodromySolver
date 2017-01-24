@@ -474,9 +474,8 @@ coreMonodromySolve (HomotopyGraph, HomotopyNode) := o -> (HG,node1) -> (
 						);
 					);
 					
-					--update necessary paths in L
-					--Something is broken here. Commenting out the line in the for loop makes it work,
-					--but it shouldn't be necessary...
+					--update necessary paths in L. Need to recompute "identical" edges
+					--as well since we've modified expectedCorrCount
 					for key in keys(L) do (
 						--Probably should give each node a unique identifier so this isn't necessary.
 						if (key#Tail#SpecializedSystem == tail#SpecializedSystem)
