@@ -455,16 +455,16 @@ coreMonodromySolve (HomotopyGraph, HomotopyNode) := o -> (HG,node1) -> (
 	while true do (
 		for i in 0..#TaskList - 1 do (
 			if class(TaskList#i#ThreadTask) === class(null) or isReady(TaskList#i#ThreadTask) then (
-				if not class(TaskList#i#ThreadTask) === class(null) then (
+				if class(TaskList#i#ThreadTask) =!= class(null) then (
 					--This path just finished being tracked. We need to update data structures.
 					(untrackedInds, newSols) := taskResult(TaskList#i#ThreadTask);
 					
 					--Increase the number of know solutions of the destination node.
 					npaths = npaths + cleanupTrackEdge(TaskList#i#PathTrack,untrackedInds, newSols);
-					--<< "NPATHS: " << npaths << endl;
 					
 					--update E.V.s in TaskList
 					tail := TaskList#i#PathTrack#Tail;
+					head := TaskList#i#PathTrack#Head;
 					TaskList#i#PathTrack#Edge#expectedCorrCount = TaskList#i#PathTrack#Edge#expectedCorrCount - 1;
 					tail#expectedSolCount = 0;
 					for t in TaskList do (
@@ -479,8 +479,12 @@ coreMonodromySolve (HomotopyGraph, HomotopyNode) := o -> (HG,node1) -> (
 					--but it shouldn't be necessary...
 					for key in keys(L) do (
 						--Probably should give each node a unique identifier so this isn't necessary.
---						if key#Tail#SpecializedSystem == tail#SpecializedSystem then
+						if (key#Tail#SpecializedSystem == tail#SpecializedSystem)
+						or ((key#Head#SpecializedSystem == tail#SpecializedSystem)
+							and (key#Tail#SpecializedSystem == head#SpecializedSystem)) then (
+							--peek(key#Tail#SpecializedSystem);
 							L#key = ExpectedNewSolCount(key);
+						);
 					);
 				);
 				
